@@ -1,0 +1,25 @@
+{
+  "name": "demo-",
+  "version": "0.0.1",
+  "description": "Demo of the PCH feaure of filecoin-signing-tools",
+  "main": "index.js",
+  "dependencies": {
+    "@zondax/filecoin-signing-tools": "^0.9.0",
+    "axios": "^0.19.2",
+    "chalk": "^4.1.0",
+    "cids": "^1.0.0",
+    "prompt-sync": "^4.2.0"
+  },
+  "devDependencies": {
+    "bip32": "^2.0.5",
+    "bip39": "^3.0.2",
+    "blakejs": "^1.1.0",
+    "mocha": "^7.1.1",
+    "secp256k1": "^4.0.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Mike Goelzer",
+  "license": "MIT"
+}
