@@ -7,7 +7,7 @@
 
 2.  Create a .env file based on the template in this repo
 
-3.  Update the `index_secp.js` source code to use the IP:PORT of your Lotus instance's JSON-RPC interface..
+3.  Update the `index_secp.js` source code to use the ip:port of your Lotus instance's JSON-RPC interface. This is the `const URL = ` around line 29.
 
 4.  Make sure your From wallet (the whose private key is in .env) has some FIL. 2 FIL should be enough.
 
