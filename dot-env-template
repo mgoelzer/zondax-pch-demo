@@ -1,0 +1,14 @@
+################################################################################
+#
+# Instructions: fill in values below and rename this file to ".env"
+#
+################################################################################
+
+
+# This is the private key of the From wallet. Obtain like this:
+#   $ lotus wallet export <From wallet address> | xxd -r -p | jq .PrivateKey
+PRIVATE_KEY_BASE64=""
+
+# API token of the lotus instance you are using:
+#   $ cat .lotus/token
+LOTUS_API_TOKEN=""

@@ -1,4 +1,5 @@
-const filecoin_signer = require('@zondax/filecoin-signing-tools');
+const dotenv = require('dotenv').config();
+const filecoin_signer = require('../filecoin-signing-tools/signer-npm/pkg/nodejs');
 const bip39 = require('bip39');
 const bip32 = require('bip32');
 const axios = require('axios');
@@ -8,11 +9,22 @@ const util = require("util");
 const chalk = require('chalk');
 const prompt = require('prompt-sync')();
 
-const privateKeyBase64 = "uGOBUfBGpxu3jVGdJFbUiyPH53GLVAbG6wdBG4/fl9g="
-const privateKey = Buffer.from(privateKeyBase64, 'base64')
-const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.K7ETGuBkWqCxw-5EOCxJLtpWcL3w1MywGBR1Gg7Uj4c"
+// TODO:  
+// 1.  get rid of key wrangling section
+// 2.  derive from address from private key and assert that it's equal to from address const
+// 3.  get rid of key wranglign section
+// 4.  verify that voucher is correct
+// 5.  to address needs to be BLS
 
-const headers = { "Authorization": `Bearer ${TOKEN}` }
+const to_addr = "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a"
+//const from_addr = "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta"
+
+const privateKeyBase64 = process.env.PRIVATE_KEY_BASE64
+const privateKey = Buffer.from(privateKeyBase64, 'base64')
+const LOTUS_API_TOKEN = process.env.LOTUS_API_TOKEN
+
+
+const headers = { "Authorization": `Bearer ${LOTUS_API_TOKEN}` }
 
 const URL = "http://192.168.1.23:1234/rpc/v0"
 
@@ -50,8 +62,7 @@ f = async () => {
 	console.log(">> nonce = "+nonce+"\n")
 	// End - get nonce
 
-	let PAYMENT_CHANNEL_ADDRESS = "t01010"
-	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKey.address, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", "1000", nonce)
+	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKey.address, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", "1000", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
 
 	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(create_pymtchan, privateKey));
 
@@ -95,21 +106,18 @@ f = async () => {
 	console.log(chalk.blueBright("//"))
 	console.log(chalk.blueBright("////////////////////////////////////////////////////////\n"))
 
-	const VOUCHER_SIGNER_2 = privateKeyBase64 // key for `t3ucc7cbh...` addr
-	let voucher = filecoin_signer.createVoucher(PAYMENT_CHANNEL_ADDRESS, BigInt(0), BigInt(0), "250", BigInt(0), BigInt(nonce), BigInt(0))
+	const VOUCHER_SIGNER_2 = privateKeyBase64
+	let voucher = filecoin_signer.createVoucher(PCH, BigInt(0), BigInt(0), "250", BigInt(0), BigInt(nonce), BigInt(0))
+
+	console.log(">> voucher: " + util.inspect(voucher))
 
 	let signedVoucher = filecoin_signer.signVoucher(voucher, VOUCHER_SIGNER_2)
 
-	let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))[10]
-	console.log(">> signedVoucher (base64): " + Buffer.from(tmp).slice(1).toString('base64'))
-	// Discussion 6:  `lotus paych voucher check t2y53bzjfausn6nqmmjfuugrgajw5ynd67y6n5ngi AOByNvdDyag9ys4OCQopJzbNqF6ql6+FU0mjm/ulOrR98E3vZgZBtHY88aUVkqHRtTCbZDY5sY230BAg+dI6RQA=` gives this output:
-	// ERROR: illegal base64 data at input byte 30
-	// Byte 30 is a 0x0a (line break) character:
-	// 00000000: 00e0 7236 f743 c9a8 3dca ce0e 090a 2927  ..r6.C..=.....)'
-	// 00000010: 36cd a85e aa97 af85 5349 a39b fba5 3ab4  6..^....SI....:.
-	// 00000020: 7df0 4def 6606 41b4 763c f1a5 1592 a1d1  }.M.f.A.v<......
-	// 00000030: b530 9b64 3639 b18d b7d0 1020 f9d2 3a45  .0.d69..... ..:E
-	// 00000040: 00                                       .
+	// This is what to convert to hex and plug into cbor.me to view
+	console.log(">> signed voucher: " + util.inspect(signedVoucher))
+
+	let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))
+	//console.log(">> signedVoucher (base64): " + Buffer.from(tmp).slice(1).toString('base64'))
 
 	// TODO:  check voucher validity using filecoin_signer here...
 	// Discussion 7:  No method to verify a voucher in signer-npm/js/src/index.js
@@ -138,7 +146,7 @@ f = async () => {
 	// End - get nonce
 
 
-	let update_paych_message = filecoin_signer.updatePymtChan(PAYMENT_CHANNEL_ADDRESS, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", signedVoucher, nonce)
+	let update_paych_message = filecoin_signer.updatePymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", signedVoucher, nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
 
 	//console.log(">> update_paych_message"+util.inspect(update_paych_message))
 
@@ -173,7 +181,7 @@ f = async () => {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.StateReadState",
 	  id: 1,
-	  params: [PAYMENT_CHANNEL_ADDRESS, null]
+	  params: [PCH, null]
 	}, { headers })
 	console.log("mpoolpush pch response.data = "+util.inspect(response.data))
 
@@ -198,11 +206,11 @@ f = async () => {
 	console.log(">> nonce = "+nonce+"\n")
 	// End - get nonce
 
-	update_paych_message = filecoin_signer.settlePymtChan(PAYMENT_CHANNEL_ADDRESS, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce)
+	settle_paych_message = filecoin_signer.settlePymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium)
 
-	console.log(">> update paych message = "+util.inspect(update_paych_message))
+	console.log(">> settle paych message = "+util.inspect(settle_paych_message))
 
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKey));
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(settle_paych_message, privateKey));
 	  
 	console.log(">> update pch signedMessage = "+util.inspect(signedMessage)+"\n")
 	  
@@ -236,7 +244,7 @@ f = async () => {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.StateReadState",
 	  id: 1,
-	  params: [PAYMENT_CHANNEL_ADDRESS, null]
+	  params: [PCH, null]
 	}, { headers })
 	console.log("post-settle pch state response.data = "+util.inspect(response.data))
 
@@ -261,7 +269,7 @@ f = async () => {
 	console.log(">> nonce = "+nonce+"\n")
 	// End - get nonce
 
-	collect_paych_message = filecoin_signer.collectPymtChan(PAYMENT_CHANNEL_ADDRESS, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce)
+	collect_paych_message = filecoin_signer.collectPymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
 
 	//console.log("collect_paych_message:" + util.inspect(collect_paych_message))
 
@@ -295,7 +303,7 @@ f = async () => {
           jsonrpc: "2.0",
           method: "Filecoin.StateReadState",
           id: 1,
-          params: [PAYMENT_CHANNEL_ADDRESS, null]
+          params: [PCH, null]
         }, { headers })
         console.log("post-collect pch state response.data = "+ util.inspect(response.data))
 

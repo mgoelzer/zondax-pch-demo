@@ -4,10 +4,12 @@
   "description": "Demo of the PCH feaure of filecoin-signing-tools",
   "main": "index.js",
   "dependencies": {
-    "@zondax/filecoin-signing-tools": "^0.9.0",
+    "@zondax/filecoin-signing-tools": "../filecoin-signing-tools/signer-npm/pkg/",
     "axios": "^0.19.2",
     "chalk": "^4.1.0",
     "cids": "^1.0.0",
+    "dotenv": "^8.2.0",
+    "ipld-dag-cbor": "^0.17.0",
     "prompt-sync": "^4.2.0"
   },
   "devDependencies": {

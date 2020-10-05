@@ -1,3 +1,4 @@
+const dotenv = require('dotenv').config();
 const filecoin_signer = require('@zondax/filecoin-signing-tools');
 const bip39 = require('bip39');
 const bip32 = require('bip32');
@@ -6,11 +7,11 @@ const secp256k1 = require('secp256k1');
 const cbor = require("ipld-dag-cbor").util;
 const util = require("util");
 
-const privateKeyBase64 = "qC09rxocfyHbHXnlep4QQpUIU9nZIeImy/CJ7QvRggA="
+const privateKeyBase64 = process.env.PRIVATE_KEY_BASE64
 const privateKey = Buffer.from(privateKeyBase64, 'base64')
-const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.K7ETGuBkWqCxw-5EOCxJLtpWcL3w1MywGBR1Gg7Uj4c"
+const LOTUS_API_TOKEN = process.env.LOTUS_API_TOKEN
 
-const headers = { "Authorization": `Bearer ${TOKEN}` }
+const headers = { "Authorization": `Bearer ${LOTUS_API_TOKEN}` }
 
 const URL = "http://192.168.1.23:1234/rpc/v0"
 
@@ -60,6 +61,7 @@ f = async () => {
 	let PAYMENT_CHANNEL_ADDRESS = "t01010"
 	// Discussion 4:  is this the address of the payment channel actor? Actual
 	// payment channel address will start with "t2..." 
+	// Answer:  t01010 is the IdAddress of payment channel Lola was using.
 	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKey.address, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", "1000", nonce)
 
 	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(create_pymtchan, privateKey));
@@ -94,6 +96,8 @@ f = async () => {
 	// Discussion 5: crashes here with "server returned 500"
 	// Server log shows this:
 //2020-10-01T00:06:35.528Z	ERROR	rpc	go-jsonrpc@v0.1.2-0.20200822201400-474f4fdccc52/server.go:87	RPC Error: unmarshaling params for 'Filecoin.StateWaitMsg' (param: *cid.Cid): json: cannot unmarshal number into Go value of type struct { CidTarget string "json:\"/\"" }
+	// Answer:  because the call above is failing, CID is prob coming back
+	// null.
 
 	
 	console.log(">> response.data: " + util.inspect(response.data))
