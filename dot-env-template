@@ -9,6 +9,9 @@
 #   $ lotus wallet export <From wallet address> | xxd -r -p | jq .PrivateKey
 PRIVATE_KEY_BASE64=""
 
+# This is the private key of the To wallet. Obtain same way as From key.
+TO_PRIVATE_KEY_BASE64=""
+
 # API token of the lotus instance you are using:
 #   $ cat .lotus/token
 LOTUS_API_TOKEN=""

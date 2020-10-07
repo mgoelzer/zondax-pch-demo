@@ -17,16 +17,21 @@ const prompt = require('prompt-sync')();
 // 5.  to address needs to be BLS
 
 const to_addr = "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a"
+const to_addr_private_key_base64=process.env.TO_PRIVATE_KEY_BASE64
 //const from_addr = "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta"
 
 const privateKeyBase64 = process.env.PRIVATE_KEY_BASE64
 const privateKey = Buffer.from(privateKeyBase64, 'base64')
 const LOTUS_API_TOKEN = process.env.LOTUS_API_TOKEN
+// Lola suggests:
+//const LOTUS_API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.g_SIeY0Hl1XcW5BhS3qWZzwHLW2Xj_0A7IA5GA3rb5Q"
 
 
 const headers = { "Authorization": `Bearer ${LOTUS_API_TOKEN}` }
 
 const URL = "http://192.168.1.23:1234/rpc/v0"
+//Lola suggests:
+//const URL = "http://167.86.125.105:1234/rpc/v0"
 
 f = async () => {
 	console.log(chalk.blueBright("\n////////////////////////////////////////////////////////"))
@@ -41,6 +46,7 @@ f = async () => {
 
 	console.log(">> recovered key = "+recoveredKey.address)
 	console.log(">> address = "+address+"\n")
+	console.log(">> to_addr_private_key_base64 = " + to_addr_private_key_base64 + "\n")
 
 
 	console.log(chalk.blueBright("////////////////////////////////////////////////////////"))
@@ -62,10 +68,10 @@ f = async () => {
 	console.log(">> nonce = "+nonce+"\n")
 	// End - get nonce
 
+	console.log(`Code:  let create_pymtchan = filecoin_signer.createPymtChan(${recoveredKey.address}, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", "1000", nonce, "10000000", "16251176117", "140625002")`)
 	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKey.address, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", "1000", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
 
 	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(create_pymtchan, privateKey));
-
 	console.log(">> pch create signedMessage: "+util.inspect(signedMessage))
 
       	console.log(chalk.greenBright("\n##### MPOOLPUSH CREATE PAYMENT CHANNEL #####"))
@@ -102,21 +108,25 @@ f = async () => {
 
 	console.log(chalk.blueBright("////////////////////////////////////////////////////////"))
 	console.log(chalk.blueBright("//"))
-	console.log(chalk.blueBright("// Sign and send voucher"))
+	console.log(chalk.blueBright("// Create and sign voucher"))
 	console.log(chalk.blueBright("//"))
 	console.log(chalk.blueBright("////////////////////////////////////////////////////////\n"))
 
-	const VOUCHER_SIGNER_2 = privateKeyBase64
+	const VOUCHER_SIGNER = privateKeyBase64
+	console.log("Code:  let voucher = filecoin_signer.createVoucher(" + PCH + ", BigInt(0), BigInt(0), \"250\", BigInt(0), BigInt(nonce), BigInt(0))")
 	let voucher = filecoin_signer.createVoucher(PCH, BigInt(0), BigInt(0), "250", BigInt(0), BigInt(nonce), BigInt(0))
 
-	console.log(">> voucher: " + util.inspect(voucher))
+	console.log(">> unsigned voucher: " + util.inspect(voucher))
+	prompt('Press ENTER to continue...')
 
-	let signedVoucher = filecoin_signer.signVoucher(voucher, VOUCHER_SIGNER_2)
+	console.log("Code:  let signedVoucher = filecoin_signer.signVoucher(voucher, " + VOUCHER_SIGNER + ")")
+	let signedVoucher = filecoin_signer.signVoucher(voucher, VOUCHER_SIGNER)
 
 	// This is what to convert to hex and plug into cbor.me to view
 	console.log(">> signed voucher: " + util.inspect(signedVoucher))
 
-	let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))
+	//let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))
+	//console.log(">> signedVoucher (cbor deserialized): " + Buffer.from(tmp).slice(1).toString('base64'))
 	//console.log(">> signedVoucher (base64): " + Buffer.from(tmp).slice(1).toString('base64'))
 
 	// TODO:  check voucher validity using filecoin_signer here...
@@ -131,29 +141,29 @@ f = async () => {
 	console.log(chalk.blueBright("//"))
 	console.log(chalk.blueBright("////////////////////////////////////////////////////////\n"))
 
-
 	// Get nonce
 	console.log(chalk.greenBright("\n######## GET NONCE ########"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.MpoolGetNonce",
 	  id: 1,
-	  params: [address]
+	  params: [to_addr]
 	}, {headers})
 	console.log("get nonce response.data = ")+util.inspect(response.data)
 	nonce = response.data.result
 	console.log(">> nonce = "+nonce+"\n")
 	// End - get nonce
 
+	//let update_paych_message = filecoin_signer.updatePymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", signedVoucher, nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
+	// Lola suggests:
+	let update_paych_message = filecoin_signer.updatePymtChan(PCH, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", signedVoucher, nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
+	console.log(">> update_paych_message="+util.inspect(update_paych_message))
 
-	let update_paych_message = filecoin_signer.updatePymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", signedVoucher, nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
+	//signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKeyBase64));
+	// Lola suggests
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, to_addr_private_key_base64));
+	console.log(">> update paych signedMessage="+util.inspect(signedMessage))
 
-	//console.log(">> update_paych_message"+util.inspect(update_paych_message))
-
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKeyBase64));
-	 
-	console.log("update paych signedMessage="+util.inspect(signedMessage))
-	  
 	console.log(chalk.greenBright("\n##### MPOOLPUSH UPDATE CHANNEL #####"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
@@ -237,7 +247,6 @@ f = async () => {
 	  }, { headers })
 	console.log("settle pch response.data = "+util.inspect(response.data))
 	// End - Wait for settle pch
-
 
 	console.log(chalk.greenBright("\n##### READ POST-SETTLE PAYMENT CHANNEL STATE #####"))
 	response = await axios.post(URL, {
