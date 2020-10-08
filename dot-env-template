@@ -4,14 +4,17 @@
 #
 ################################################################################
 
-
-# This is the private key of the From wallet. Obtain like this:
+# Private key of the payment channel's "From" wallet. Obtain like this:
 #   $ lotus wallet export <From wallet address> | xxd -r -p | jq .PrivateKey
-PRIVATE_KEY_BASE64=""
+FROM_PRIVATE_KEY_BASE64=""
 
-# This is the private key of the To wallet. Obtain same way as From key.
+# Private key of the "To" wallet. Obtain same way as above.
 TO_PRIVATE_KEY_BASE64=""
 
+# URL of the JSON-RPC interface on a Lotus instance
+# Example: "http://1.1.1.1:1234/rpc/v0"
+LOTUS_RPC_URL=""
+
 # API token of the lotus instance you are using:
-#   $ cat .lotus/token
+# Obtain by running `cat .lotus/token`
 LOTUS_API_TOKEN=""

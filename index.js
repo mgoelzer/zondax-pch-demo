@@ -1,236 +1,206 @@
 const dotenv = require('dotenv').config();
-const filecoin_signer = require('@zondax/filecoin-signing-tools');
+const filecoin_signer = require('../filecoin-signing-tools/signer-npm/pkg/nodejs');
 const bip39 = require('bip39');
 const bip32 = require('bip32');
 const axios = require('axios');
 const secp256k1 = require('secp256k1');
 const cbor = require("ipld-dag-cbor").util;
 const util = require("util");
+const chalk = require('chalk');
+const prompt = require('prompt-sync')();
 
-const privateKeyBase64 = process.env.PRIVATE_KEY_BASE64
-const privateKey = Buffer.from(privateKeyBase64, 'base64')
+// TODO:  
+// 4.  verify that voucher is correct
+// 5.  to address needs to be BLS
+
+const URL = process.env.LOTUS_RPC_URL
 const LOTUS_API_TOKEN = process.env.LOTUS_API_TOKEN
-
 const headers = { "Authorization": `Bearer ${LOTUS_API_TOKEN}` }
 
-const URL = "http://192.168.1.23:1234/rpc/v0"
-
 f = async () => {
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// Key wrangling")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
-	// Generate pkey from constant key above
-	let recoveredKey = filecoin_signer.keyRecover(privateKeyBase64, true);
-	console.log(">> recovered key = "+recoveredKey.address)
-	// Discussion 1
-	// prints:    recovered key = t1633qay3bxztgkm2ox4obvrye2rtiv5zyffjwxqi
-	// should be: recovered key = t3ucc7cbhrbwuotrugsdgu6y4mutbl2wuq36hxv5aw6qtuimsmstotiqppp5b3dmvhmrrdjfnj6dqqgeovep5a
-	// NB:  $ lotus wallet export t3ucc7cbhrbwuotrugsdgu6y4mutbl2wuq36hxv5aw6qtuimsmstotiqppp5b3dmvhmrrdjfnj6dqqgeovep5a | xxd -r -p
-	// {"Type":"bls","PrivateKey":"qC09rxocfyHbHXnlep4QQpUIU9nZIeImy/CJ7QvRggA="}
-	// TEMP: 
-	recoveredKey = {"address":"t3ucc7cbhrbwuotrugsdgu6y4mutbl2wuq36hxv5aw6qtuimsmstotiqppp5b3dmvhmrrdjfnj6dqqgeovep5a"}
-	let address = recoveredKey.address
-	// Discussion 3:  in actual `wasm_node/payment_channel.js`, address is coming from a Filecoin.WalletImport RPC call (line 26-50).  But this defeats the whole purpose of the library (remote signing without Lotus ever seeing your keys)...
-	console.log(">> recovered key = "+recoveredKey.address)
-	console.log(">> address = "+address+"\n")
+	/////////////////////////////////////////////////////////////////////
+	//
+	//   Helper functions
+	//
+	/////////////////////////////////////////////////////////////////////
+	getNonce = async (addr) => {
+		// Get nonce
+		console.log(chalk.blueBright("\n######## GET NONCE ########"))
+		response = await axios.post(URL, {
+		  jsonrpc: "2.0",
+		  method: "Filecoin.MpoolGetNonce",
+		  id: 1,
+		  params: [addr]
+		}, {headers})
+		//console.log("response.data = "+util.inspect(response.data))
+		nonce = response.data.result
+		console.log(`Nonce (${addr}) = ${nonce}\n`)
+		return nonce
+		// End - get nonce
+	}
 
-	// Get nonce
-	console.log(" ######## GET NONCE ########")
-	response = await axios.post(URL, {
-	  jsonrpc: "2.0",
-	  method: "Filecoin.MpoolGetNonce",
-	  id: 1,
-	  params: [address]
-	}, {headers})
-	console.log(">> response.data = "+util.inspect(response.data))
-	nonce = response.data.result
-	console.log(">> nonce = "+nonce+"\n")
-	// End - get nonce
+	/////////////////////////////////////////////////////////////////////
+	//
+	// Generate To and From public keys from private keys in .env
+	//
+	/////////////////////////////////////////////////////////////////////
 
+	console.log(chalk.greenBright("\n ######## Derive From and To Addresses ######## "))
+	
+	const fromAddrPrivateKeyBase64 = process.env.FROM_PRIVATE_KEY_BASE64
+	const fromAddrPrivateKey = Buffer.from(fromAddrPrivateKeyBase64, 'base64')
+	let recoveredKeyFrom = filecoin_signer.keyRecover(fromAddrPrivateKeyBase64, true);
+	const fromAddr = recoveredKeyFrom.address
 
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// PCH creation")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
+	const toAddrPrivateKeyBase64 = process.env.TO_PRIVATE_KEY_BASE64
+	const toAddrPrivateKey = Buffer.from(toAddrPrivateKeyBase64, 'base64')
+	let recoveredKeyTo = filecoin_signer.keyRecover(toAddrPrivateKeyBase64, true);
+	const toAddr = recoveredKeyTo.address
 
-	console.log("##### CREATE PAYMENT CHANNEL #####")
+	/////////////////////////////////////////////////////////////////////
+	//
+	// Create PCH
+	//
+	/////////////////////////////////////////////////////////////////////
 
-	let PAYMENT_CHANNEL_ADDRESS = "t01010"
-	// Discussion 4:  is this the address of the payment channel actor? Actual
-	// payment channel address will start with "t2..." 
-	// Answer:  t01010 is the IdAddress of payment channel Lola was using.
-	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKey.address, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", "1000", nonce)
+	console.log(chalk.greenBright("\n ######## Create Payment Channel ######## "))
 
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(create_pymtchan, privateKey));
+	nonce = await getNonce(recoveredKeyFrom.address)
+	let create_pymtchan = filecoin_signer.createPymtChan(recoveredKeyFrom.address, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", "1000", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
 
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(create_pymtchan, fromAddrPrivateKey));
 	console.log(">> pch create signedMessage: "+util.inspect(signedMessage))
 
-      	console.log("##### SEND PAYMENT CHANNEL #####")
+    console.log(chalk.blueBright("\n##### MPOOLPUSH CREATE PAYMENT CHANNEL #####"))
       
-      	response = await axios.post(URL, {
-        	jsonrpc: "2.0",
-        	method: "Filecoin.MpoolPush",
-        	id: 1,
-       	params: [signedMessage]
-      	}, { headers })
+	response = await axios.post(URL, {
+		jsonrpc: "2.0",
+		method: "Filecoin.MpoolPush",
+		id: 1,
+	params: [signedMessage]
+	}, { headers })
 
-      	console.log(">> response.data="+util.inspect(response.data))
-	// Discussion 5:  returns this
-	//    error: { code: 1, message: 'bls signature failed to verify' }
-	// We can't verify BLS sigs?
+    console.log("mpoolpush create response.data="+util.inspect(response.data))
 	cid = response.data.result
-	console.log("message CID="+cid+"\n")
+	console.log(">> message CID="+util.inspect(cid)+"\n")
 
 
 	// Wait for PCH
-	console.log("##### WAIT FOR PAYMENT CHANNEL STATE #####")
+	console.log(chalk.blueBright("\n##### WAIT PAYMENT CHANNEL CREATE #####"))
 	response = await axios.post(URL, {
 		jsonrpc: "2.0",
 		method: "Filecoin.StateWaitMsg",
 		id: 1,
 		params: [cid, null]
 	}, { headers })
-	// Discussion 5: crashes here with "server returned 500"
-	// Server log shows this:
-//2020-10-01T00:06:35.528Z	ERROR	rpc	go-jsonrpc@v0.1.2-0.20200822201400-474f4fdccc52/server.go:87	RPC Error: unmarshaling params for 'Filecoin.StateWaitMsg' (param: *cid.Cid): json: cannot unmarshal number into Go value of type struct { CidTarget string "json:\"/\"" }
-	// Answer:  because the call above is failing, CID is prob coming back
-	// null.
-
 	
-	console.log(">> response.data: " + util.inspect(response.data))
+	console.log("response.data: " + util.inspect(response.data))
 	PCH = response.data.result.ReturnDec.IDAddress
-	console.log(">> PCH = "+PCH)
+	PCHRobust = response.data.result.ReturnDec.RobustAddress
+	console.log(">> PCH Id Address = "+PCH)
+	console.log(">> PCH Robust Address = "+PCHRobust+"\n")
 	// End - Wait for PCH
 
+	prompt('Press ENTER to continue...')
 
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// Sign and send voucher")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
-
-	const VOUCHER_SIGNER = "8VcW07ADswS4BV2cxi5rnIadVsyTDDhY1NfDH19T8Uo="
-	// Discussion 2:  what is this magic value?
-	// It equals this hex:
-	//   00000000: f157 16d3 b003 b304 b805 5d9c c62e 6b9c  .W........]...k.
-	//   00000010: 869d 56cc 930c 3858 d4d7 c31f 5f53 f14a  ..V...8X...._S.J
-	// No meaningful cbor decode: (simple)17 followed by garbage
+	/////////////////////////////////////////////////////////////////////
 	//
-	// Base64 is correct length for a BLS private key.  Let's go with that.
-	const VOUCHER_SIGNER_2 = privateKeyBase64 // key for `t3ucc7cbh...` addr
+	// Create voucher
+	//
+	/////////////////////////////////////////////////////////////////////
 
-	// Get next nonce
-	response = await axios.post(URL, {
-	  jsonrpc: "2.0",
-	  method: "Filecoin.MpoolGetNonce",
-	  id: 1,
-	  params: [address]
-	}, {headers})
-	nonce = response.data.result
-	console.log("nonce = "+nonce)
-	// End - Get next nonce
+	console.log(chalk.greenBright("\n ######## Create Signed Voucher ######## "))
 
-	let voucher = filecoin_signer.createVoucher(PAYMENT_CHANNEL_ADDRESS, BigInt(0), BigInt(0), "250", BigInt(0), BigInt(nonce), BigInt(0))
+	const VOUCHER_SIGNER = fromAddrPrivateKeyBase64
+	console.log("Code:  let voucher = filecoin_signer.createVoucher(" + PCH + ", BigInt(0), BigInt(0), \"250\", BigInt(0), BigInt(nonce), BigInt(0))")
+	let voucher = filecoin_signer.createVoucher(PCH, BigInt(0), BigInt(0), "250", BigInt(0), BigInt(nonce), BigInt(0))
 
-	let signedVoucher = filecoin_signer.signVoucher(voucher, VOUCHER_SIGNER_2)
+	console.log(">> unsigned voucher: " + util.inspect(voucher))
+	prompt('Press ENTER to continue...')
 
-	let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))[10]
-	console.log("signedVoucher (base64): " + Buffer.from(tmp).slice(1).toString('base64'))
+	console.log("Code:  let signedVoucher = filecoin_signer.signVoucher(voucher, " + VOUCHER_SIGNER + ")")
+	let signedVoucher = filecoin_signer.signVoucher(voucher, VOUCHER_SIGNER)
 
+	// This is what to convert to hex and plug into cbor.me to view
+	console.log(">> signed voucher: " + util.inspect(signedVoucher))
 
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// Update channel with signed voucher")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
+	//let tmp = cbor.deserialize(Buffer.from(signedVoucher, 'base64'))
+	//console.log(">> signedVoucher (cbor deserialized): " + Buffer.from(tmp).slice(1).toString('base64'))
+	//console.log(">> signedVoucher (base64): " + Buffer.from(tmp).slice(1).toString('base64'))
 
-	// Get nonce
-	response = await axios.post(URL, {
-	  jsonrpc: "2.0",
-	  method: "Filecoin.MpoolGetNonce",
-	  id: 1,
-	  params: [address]
-	}, {headers})
-	nonce = response.data.result
-	console.log("nonce = "+nonce)
-	// End - Get nonce
+	// TODO:  check voucher validity using filecoin_signer here...
+	// Discussion 7:  No method to verify a voucher in signer-npm/js/src/index.js
+	// as far as I can tell.
 
-	let update_paych_message = filecoin_signer.updatePymtChan(PAYMENT_CHANNEL_ADDRESS, "t3ucc7cbhrbwuotrugsdgu6y4mutbl2wuq36hxv5aw6qtuimsmstotiqppp5b3dmvhmrrdjfnj6dqqgeovep5a", signedVoucher, nonce)
+	prompt('Press ENTER to continue...')
 
-	console.log("+update_paych_message"+update_paych_message)
+	/////////////////////////////////////////////////////////////////////
+	//
+	// Update channel with voucher
+	//
+	/////////////////////////////////////////////////////////////////////
 
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKeyBase64));
-	 
-	console.log(signedMessage)
-	  
-	console.log("##### SEND UPDATE CHANNEL #####")
-	  
+	console.log(chalk.greenBright("\n ######## Update Channel with Signed Voucher ######## "))
+
+	nonce = await getNonce(toAddr)
+	let update_paych_message = filecoin_signer.updatePymtChan(PCH, "t1imp6nxsewebbjieqzhra4rduuaqxsgx5o2zgr6a", signedVoucher, nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
+	console.log(">> update_paych_message="+util.inspect(update_paych_message))
+
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, toAddrPrivateKeyBase64));
+	console.log(">> update paych signedMessage="+util.inspect(signedMessage))
+
+	console.log(chalk.blueBright("\n##### MPOOLPUSH UPDATE CHANNEL #####"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.MpoolPush",
 	  id: 1,
 	  params: [signedMessage]
 	}, { headers })
-
-	console.log(response.data)
+	console.log("mpoolpush update pch response.data = "+util.inspect(response.data))
 
 	cid = response.data.result
 
 	// Wait for update pch message
-	console.log("##### WAIT FOR PAYMENT CHANNEL STATE #####")
+	console.log(chalk.blueBright("\n##### WAIT FOR UPDATE PAYMENT CHANNEL #####"))
 	response = await axios.post(URL, {
 	    jsonrpc: "2.0",
 	    method: "Filecoin.StateWaitMsg",
 	    id: 1,
 	    params: [cid, null]
 	  }, { headers })
-	console.log(response.data)
+	console.log("update pch response.data = "+util.inspect(response.data))
 	// End - Wait for update pch message
 
-	console.log("##### READ PAYMENT CHANNEL STATE #####")
+	console.log(chalk.blueBright("\n##### READ POST-UPDATE PAYMENT CHANNEL STATE #####"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.StateReadState",
 	  id: 1,
-	  params: [PAYMENT_CHANNEL_ADDRESS, null]
+	  params: [PCH, null]
 	}, { headers })
-	console.log(response.data)
+	console.log("mpoolpush pch response.data = "+util.inspect(response.data))
 
+	prompt('Press ENTER to continue...')
 
+	/////////////////////////////////////////////////////////////////////
+	//
+	// Settle PCH
+	//
+	/////////////////////////////////////////////////////////////////////
 
+	console.log(chalk.greenBright("\n ######## Settle Channel ######## "))
 
+	nonce = await getNonce(recoveredKeyFrom.address)
 
+	settle_paych_message = filecoin_signer.settlePymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium)
 
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// Settle channel")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
+	console.log(">> settle paych message = "+util.inspect(settle_paych_message))
 
-	// Get nonce
-	response = await axios.post(URL, {
-	  jsonrpc: "2.0",
-	  method: "Filecoin.MpoolGetNonce",
-	  id: 1,
-	  params: [address]
-	}, {headers})
-	nonce = response.data.result
-	console.log("nonce = "+nonce)
-	// End - Get nonce
-
-
-	update_paych_message = filecoin_signer.settlePymtChan(PAYMENT_CHANNEL_ADDRESS, "t3ucc7cbhrbwuotrugsdgu6y4mutbl2wuq36hxv5aw6qtuimsmstotiqppp5b3dmvhmrrdjfnj6dqqgeovep5a", nonce)
-
-	console.log(update_paych_message)
-
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKey));
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(settle_paych_message, fromAddrPrivateKey));
 	  
-	console.log(signedMessage)
+	console.log(">> update pch signedMessage = "+util.inspect(signedMessage)+"\n")
 	  
-	console.log("##### SETTLE PAYMENT CHANNEL #####")
+	console.log(chalk.blueBright("\n##### MPOOLPUSH SETTLE PAYMENT CHANNEL #####"))
 	  
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
@@ -239,72 +209,78 @@ f = async () => {
 	  params: [signedMessage]
 	}, { headers })
 
-	console.log(response.data)
+	console.log("mpoolpush settle response.data = "+util.inspect(response.data))
 
 	cid = response.data.result
 
 	// Wait for settle pch
-	console.log("##### WAIT FOR PAYMENT CHANNEL STATE #####")
+	console.log(chalk.blueBright("\n##### WAIT FOR SETTLE PAYMENT CHANNEL #####"))
 	response = await axios.post(URL, {
 	    jsonrpc: "2.0",
 	    method: "Filecoin.StateWaitMsg",
 	    id: 1,
 	    params: [cid, null]
 	  }, { headers })
-	console.log(response.data)
+	console.log("settle pch response.data = "+util.inspect(response.data))
 	// End - Wait for settle pch
 
-
-
-
-
-	console.log("////////////////////////////////////////////////////////")
-	console.log("//")
-	console.log("// Collect channel")
-	console.log("//")
-	console.log("////////////////////////////////////////////////////////\n")
-
-	// Get nonce
+	console.log(chalk.blueBright("\n##### READ POST-SETTLE PAYMENT CHANNEL STATE #####"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
-	  method: "Filecoin.MpoolGetNonce",
+	  method: "Filecoin.StateReadState",
 	  id: 1,
-	  params: [address]
-	}, {headers})
-	nonce = response.data.result
-	console.log("nonce = "+nonce)
-	// End - Get nonce
+	  params: [PCH, null]
+	}, { headers })
+	console.log("post-settle pch state response.data = "+util.inspect(response.data))
 
-	 
-	collect_paych_message = filecoin_signer.collectPymtChan(PAYMENT_CHANNEL_ADDRESS, "t137sjdbgunloi7couiy4l5nc7pd6k2jmq32vizpy", nonce)
+	prompt('Press ENTER to continue...')
 
-	console.log("collect_paych_message:" + collect_paych_message)
+	/////////////////////////////////////////////////////////////////////
+	//
+	// Collect PCH
+	//
+	/////////////////////////////////////////////////////////////////////
 
-	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(update_paych_message, privateKey));
+	console.log(chalk.greenBright("\n ######## Collect Channel ######## "))
 
-	console.log(signedMessage)
-	  
-	console.log("##### COLLECTE PAYMENT CHANNEL #####")
-	  
+	nonce = await getNonce(recoveredKeyFrom.address)
+
+	collect_paych_message = filecoin_signer.collectPymtChan(PCH, "t1a25ihzpz7jb6wgjkkd7cndnhgo4zbbap6jc5pta", nonce, "10000000", "16251176117", "140625002") // gas limit, fee cap, premium
+
+	signedMessage = JSON.parse(filecoin_signer.transactionSignLotus(collect_paych_message, fromAddrPrivateKey));
+
+	console.log("collect pch signedMessage:"+util.inspect(signedMessage))
+	
+	console.log(chalk.blueBright("\n##### MPOOLPUSH COLLECT PAYMENT CHANNEL #####"))
 	response = await axios.post(URL, {
 	  jsonrpc: "2.0",
 	  method: "Filecoin.MpoolPush",
 	  id: 1,
 	  params: [signedMessage]
 	}, { headers })
-	console.log(response.data)
+	console.log("collect mpoolpush response.data = "+util.inspect(response.data))
 	cid = response.data.result
 
 	// Wait for collect pch
-	console.log("##### WAIT FOR PAYMENT CHANNEL STATE #####")
+	console.log(chalk.blueBright("\n##### WAIT FOR COLLECT PAYMENT CHANNEL #####"))
 	response = await axios.post(URL, {
 	    jsonrpc: "2.0",
 	    method: "Filecoin.StateWaitMsg",
 	    id: 1,
 	    params: [cid, null]
 	  }, { headers })
-	console.log(response.data)
+	console.log("collect wait response.data = "+util.inspect(response.data))
 	// End - Wait for collect pch
+
+	console.log(chalk.blueBright("\n##### READ POST-COLLECT PAYMENT CHANNEL STATE #####"))
+	response = await axios.post(URL, {
+		jsonrpc: "2.0",
+		method: "Filecoin.StateReadState",
+		id: 1,
+		params: [PCH, null]
+	}, { headers })
+	console.log("post-collect pch state response.data = "+ util.inspect(response.data))
+
 }
 
 f()
